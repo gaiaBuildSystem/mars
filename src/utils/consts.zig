@@ -4,13 +4,15 @@ pub const MARS_VERSION_S = "0.0.0";
 
 pub const MARS_HELP_S =
 \\
-\\ mars [subcommand] [args]
+\\ mars [subcommand]
 \\
 \\ Subcommands:
 \\      commit           - Commit the dev diff
 \\      dev              - Set the device to develop mode
+\\      deploy           - Deploy the head of the default branch
 \\      deploy-hash      - Get the booted deployment hash
 \\      help             - Print this help message
+\\      rollback         - Rollback the deployment to the previous commit
 \\
 \\
 ;
@@ -18,7 +20,9 @@ pub const MARS_HELP_S =
 pub const MarsCommands = enum {
     CMD_COMMIT,
     CMD_DEV,
+    CMD_DEPLOY,
     CMD_DEPLOY_HASH,
+    CMD_ROLLBACK,
     CMD_HELP,
 };
 
@@ -37,12 +41,20 @@ pub fn getMarsCommandHash(command: [*:0]u8) MarsCommands {
         return MarsCommands.CMD_DEV;
     }
 
+    if (std.mem.eql(u8, _slice, "deploy")) {
+        return MarsCommands.CMD_DEPLOY;
+    }
+
     if (std.mem.eql(u8, _slice, "deploy-hash")) {
         return MarsCommands.CMD_DEPLOY_HASH;
     }
 
     if (std.mem.eql(u8, _slice, "help")) {
         return MarsCommands.CMD_HELP;
+    }
+
+    if (std.mem.eql(u8, _slice, "rollback")) {
+        return MarsCommands.CMD_ROLLBACK;
     }
 
     std.log.err("command [{s}] not found", .{ _slice });

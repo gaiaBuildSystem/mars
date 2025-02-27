@@ -7,7 +7,7 @@ fn _checkIfWeAreRoot() bool {
     // check if we are root
     const _uid = std.os.linux.getuid();
     if (_uid != 0) {
-        std.log.err("Need super 🐮 powers to enable dev mode", .{});
+        std.log.err("Need super 🐮 powers", .{});
         return false;
     }
 
@@ -45,6 +45,17 @@ pub fn main() !void {
                     try stdout.print("dev mode enabled\n", .{});
             }
         },
+        .CMD_DEPLOY => {
+            if (ostree.isInDevMode() and _checkIfWeAreRoot()) {
+                const _ret = ostree.deployHead();
+
+                if (_ret) {
+                    try stdout.print("deploy successful\n", .{});
+                } else {
+                    std.log.err("deploy failed", .{});
+                }
+            }
+        },
         .CMD_DEPLOY_HASH => {
             const hash = try ostree.getDeployHash();
             try stdout.print("{s}\n", .{hash});
@@ -60,6 +71,9 @@ pub fn main() !void {
             } else {
                 std.log.err("Need to be in dev mode to commit", .{});
             }
+        },
+        .CMD_ROLLBACK => {
+            std.log.err("NOT IMPLEMENTED", .{});
         }
     }
 }

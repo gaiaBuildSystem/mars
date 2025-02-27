@@ -38,6 +38,117 @@ pub const LibOstree = struct {
         };
     }
 
+    pub fn deployHead(self: *LibOstree) bool {
+        // deploy the head of the default branch
+        if (self.deployment) |deployment| {
+            const _branch = ostree.ostree_deployment_get_origin(deployment);
+            const _osName = ostree.ostree_deployment_get_osname(deployment);
+
+            if (_branch) |branch| {
+                const _origin = ostree.g_key_file_get_string(
+                    branch,
+                    "origin",
+                    "refspec",
+                    null
+                );
+
+                var _error: ?*ostree.GError = null;
+                var _ret: ostree.gboolean = ostree.FALSE;
+                const _repo = ostree.ostree_repo_new_default();
+                _ret = ostree.ostree_repo_open(_repo, null, &_error);
+
+                if (_error) | err | {
+                    std.log.err("{s}", .{ err.message });
+                    return false;
+                }
+
+                if (_repo) |repo| {
+                    var _head: [*c]u8 = null;
+
+                    _error = null;
+                    _ret = ostree.ostree_repo_resolve_rev(
+                        repo,
+                        _origin,
+                        ostree.FALSE,
+                        &_head,
+                        &_error
+                    );
+
+                    if (_error) | err | {
+                        std.log.err("{s}", .{ err.message });
+                        return false;
+                    }
+
+                    std.log.debug("{s}", .{ _head });
+                    // cleanup possible leftovers
+                    _error = null;
+                    _ret = ostree.ostree_sysroot_prepare_cleanup(
+                        self.sysroot,
+                        null,
+                        &_error
+                    );
+
+                    if (_error) | err | {
+                        std.log.err("{s}", .{ err.message });
+                        return false;
+                    }
+
+                    var _newDeployment: ?*ostree.OstreeDeployment = null;
+                    _error = null;
+                    _ret = ostree.ostree_sysroot_deploy_tree(
+                        self.sysroot,
+                        _osName,
+                        _head,
+                        branch,
+                        null,
+                        null,
+                        &_newDeployment,
+                        null, &_error
+                    );
+
+                    if (_error) | err | {
+                        std.log.err("{s}", .{ err.message });
+                        return false;
+                    }
+
+                    // write deployment
+                    _error = null;
+                    _ret = ostree.ostree_sysroot_simple_write_deployment(
+                        self.sysroot,
+                        _osName,
+                        _newDeployment,
+                        null,
+                        ostree.OSTREE_SYSROOT_SIMPLE_WRITE_DEPLOYMENT_FLAGS_NO_CLEAN,
+                        null,
+                        &_error
+                    );
+
+                    if (_error) | err | {
+                        std.log.err("{s}", .{ err.message });
+                        return false;
+                    }
+
+                    // final cleanup
+                    _error = null;
+                    _ret = ostree.ostree_sysroot_cleanup(
+                        self.sysroot,
+                        null,
+                        &_error
+                    );
+
+                    if (_error) | err | {
+                        std.log.err("{s}", .{ err.message });
+                        return false;
+                    }
+
+                    return true;
+                }
+            }
+        }
+
+        @panic("sysroot not found");
+    }
+
     pub fn unlock(self: *LibOstree) bool {
         var _error: ?*ostree.GError = null;
 

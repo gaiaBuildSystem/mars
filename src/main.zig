@@ -76,6 +76,9 @@ pub fn main() !void {
         },
         .CMD_ROLLBACK => {
             std.log.err("NOT IMPLEMENTED", .{});
-        }
+        },
+        .CMD_VERSION => {
+            try stdout.print("{s}\n", .{consts.MARS_VERSION_S});
+        },
     }
 }

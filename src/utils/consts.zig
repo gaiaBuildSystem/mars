@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const MARS_VERSION_S = "0.0.0";
+pub const MARS_VERSION_S = "0.0.2";
 
 pub const MARS_HELP_S =
 \\
@@ -24,6 +24,7 @@ pub const MarsCommands = enum {
     CMD_DEPLOY_HASH,
     CMD_ROLLBACK,
     CMD_HELP,
+    CMD_VERSION
 };
 
 pub fn getStrinAsSlice(str: [*:0]u8) []u8 {
@@ -55,6 +56,10 @@ pub fn getMarsCommandHash(command: [*:0]u8) MarsCommands {
 
     if (std.mem.eql(u8, _slice, "rollback")) {
         return MarsCommands.CMD_ROLLBACK;
+    }
+
+    if (std.mem.eql(u8, _slice, "version")) {
+        return MarsCommands.CMD_VERSION;
     }
 
     std.log.err("command [{s}] not found", .{ _slice });

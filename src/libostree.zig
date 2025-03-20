@@ -242,6 +242,19 @@ pub const LibOstree = struct {
         return null;
     }
 
+
+    fn _pathExists(path: []const u8) !bool {
+        const fs = std.fs;
+        const cwd = fs.cwd();
+
+        cwd.access(path, .{}) catch |err| switch (err) {
+            error.FileNotFound => return false,
+            else => return err,
+        };
+
+        return true;
+    }
+
     fn _prepareChangesPath() !void {
         const _file = mntent.setmntent("/proc/mounts", "r");
         if (_file) |file| {
@@ -261,6 +274,11 @@ pub const LibOstree = struct {
                             "{s}/",
                             .{ upperdir }
                         );
+
+                        // if the /tmp/mars already exists simple remove it
+                        if (try _pathExists("/tmp/mars")) {
+                            try std.fs.cwd().deleteTree("/tmp/mars");
+                        }
 
                         try std.fs.makeDirAbsolute("/tmp/mars");
                         try std.fs.makeDirAbsolute("/tmp/mars/usr");

@@ -17,9 +17,10 @@ pub const LibOstree = struct {
     version: *const [6:0]u8,
     deployment: ?*ostree.OstreeDeployment,
     sysroot: ?*ostree.OstreeSysroot,
+    allocator: std.mem.Allocator,
 
     // factory
-    pub fn init() LibOstree {
+    pub fn init(gpa: std.mem.Allocator) LibOstree {
         // get the ostree deployment
         var _error: ?*ostree.GError = null;
         const _sysroot = ostree.ostree_sysroot_new(null);
@@ -35,36 +36,47 @@ pub const LibOstree = struct {
             .version = ostree.OSTREE_VERSION_S,
             .deployment = ostree.ostree_sysroot_get_booted_deployment(_sysroot),
             .sysroot = _sysroot,
+            .allocator = gpa,
         };
     }
 
-    pub fn deployHead(self: *LibOstree) bool {
+    pub fn deployHead(self: *LibOstree) !bool {
         // deploy the head of the default branch
         if (self.deployment) |deployment| {
-            const _branch = ostree.ostree_deployment_get_origin(deployment);
-            const _osName = ostree.ostree_deployment_get_osname(deployment);
+            var _error: ?*ostree.GError = null;
+            var _ret: ostree.gboolean = ostree.FALSE;
+            const _repo = ostree.ostree_repo_new_default();
+            const _deploymentGKeyFile = ostree.ostree_deployment_get_origin(deployment);
+            _ret = ostree.ostree_repo_open(_repo, null, &_error);
 
-            if (_branch) |branch| {
-                const _origin = ostree.g_key_file_get_string(
-                    branch,
-                    "origin",
-                    "refspec",
-                    null
-                );
+            if (_error) | err | {
+                std.log.err("{s}", .{ err.message });
+                return false;
+            }
 
-                var _error: ?*ostree.GError = null;
-                var _ret: ostree.gboolean = ostree.FALSE;
-                const _repo = ostree.ostree_repo_new_default();
-                _ret = ostree.ostree_repo_open(_repo, null, &_error);
+            if (_repo) |repo| {
+                const _osName = ostree.ostree_deployment_get_osname(deployment);
+                var _envMap = try std.process.getEnvMap(self.allocator);
+                defer _envMap.deinit();
+                const _branch = _envMap.get("MARS_OSTREE_REPO_BRANCH");
 
-                if (_error) | err | {
-                    std.log.err("{s}", .{ err.message });
-                    return false;
-                }
-
-                if (_repo) |repo| {
+                if (_branch) |branch| {
+                    // the []const u8 is not null terminated
+                    // so we need to make it null terminated
+                    const _originBuffer = try self.allocator.alloc(u8, branch.len + 1);
+                    defer self.allocator.free(_originBuffer);
+                    std.mem.copyBackwards(u8, _originBuffer, branch);
+                    _originBuffer[branch.len] = 0;
                     var _head: [*c]u8 = null;
 
+                    // now we can use it as a null terminated string C pointer
+                    const _origin: [*c]const u8 = @ptrCast(_originBuffer);
+
+                    std.log.debug("osname: {s}", .{ std.mem.span(_osName) });
+                    std.log.debug("branch: {s}", .{ std.mem.span(_origin) });
+
+                    // get the GKeyFile
+                    // 1. resolve commit from branch
                     _error = null;
                     _ret = ostree.ostree_repo_resolve_rev(
                         repo,
@@ -79,7 +91,8 @@ pub const LibOstree = struct {
                         return false;
                     }
 
-                    std.log.debug("{s}", .{ _head });
+                    std.log.debug("head: {s}", .{ _head });
+
                     // cleanup possible leftovers
                     _error = null;
                     _ret = ostree.ostree_sysroot_prepare_cleanup(
@@ -99,7 +112,7 @@ pub const LibOstree = struct {
                         self.sysroot,
                         _osName,
                         _head,
-                        branch,
+                        _deploymentGKeyFile,
                         null,
                         null,
                         &_newDeployment,
@@ -143,10 +156,17 @@ pub const LibOstree = struct {
 
                     return true;
                 }
+
+                std.log.err("branch not found", .{});
+                return false;
             }
+
+            std.log.err("repo not found", .{});
+            return false;
         }
 
-        @panic("sysroot not found");
+        std.log.err("deployment not found", .{});
+        return false;
     }
 
     pub fn unlock(self: *LibOstree) bool {
@@ -172,7 +192,8 @@ pub const LibOstree = struct {
             }
         }
 
-        @panic("sysroot/deployment not found");
+        std.log.err("sysroot/deployment not found", .{});
+        return false;
     }
 
     pub fn getDeployHash(self: *LibOstree) ![*c]const u8 {
@@ -195,7 +216,8 @@ pub const LibOstree = struct {
             }
         }
 
-        @panic("deployment not found");
+        std.log.err("deployment not found", .{});
+        return false;
     }
 
     pub fn getBranch(self: *LibOstree) ![*c]const u8 {
@@ -262,14 +284,15 @@ pub const LibOstree = struct {
                         return;
                     }
 
-                    @panic("upperdir not found");
+                    std.log.err("upperdir not found", .{});
+                    return;
                 }
 
                 _entry = mntent.getmntent(file);
             }
         }
 
-        @panic("failed to open /proc/mounts");
+        std.log.err("failed to open /proc/mounts", .{});
     }
 
     fn _changesPathCleanup() !void {
@@ -312,22 +335,26 @@ pub const LibOstree = struct {
             }
 
             if (_repo) |repo| {
-                const _branch = ostree.ostree_deployment_get_origin(deployment);
+                var _envMap = try std.process.getEnvMap(self.allocator);
+                defer _envMap.deinit();
+                const _branch = _envMap.get("MARS_OSTREE_REPO_BRANCH");
 
                 if (_branch) |branch| {
                     const _base = ostree.ostree_deployment_get_csum(deployment);
                     var _root: ?*ostree.OstreeRepoFile = null;
                     var _commitChecksum: [*c]const u8 = null;
+                    // the []const u8 is not null terminated
+                    // so we need to make it null terminated
+                    const _originBuffer = try self.allocator.alloc(u8, branch.len + 1);
+                    defer self.allocator.free(_originBuffer);
+                    std.mem.copyBackwards(u8, _originBuffer, branch);
+                    _originBuffer[branch.len] = 0;
 
-                    const _origin = ostree.g_key_file_get_string(
-                        branch,
-                        "origin",
-                        "refspec",
-                        null
-                    );
+                    // now we can use it as a null terminated string C pointer
+                    const _origin: [*c]const u8 = @ptrCast(_originBuffer);
 
-
-                    std.log.debug("branch: {s}", .{ _origin });
+                    // this is a sanity check
+                    std.log.debug("branch: {s}", .{ std.mem.span(_origin) });
                     std.log.debug("base: {s}", .{ _base });
 
                     std.debug.print("preparing transaction...\n", .{});
@@ -433,11 +460,16 @@ pub const LibOstree = struct {
                     try _changesPathCleanup();
                     return true;
                 }
+
+                std.log.err("branch not found", .{});
+                return false;
             }
 
-            @panic("repo not found");
+            std.log.err("repo not found", .{});
+            return false;
         }
 
-        @panic("deployment not found");
+        std.log.err("deployment not found", .{});
+        return false;
     }
 };

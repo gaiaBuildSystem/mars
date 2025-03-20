@@ -16,8 +16,8 @@ fn _checkIfWeAreRoot() bool {
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-    var ostree = libOstree.LibOstree.init();
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var ostree = libOstree.LibOstree.init(gpa.allocator());
     const args = std.os.argv[1..std.os.argv.len];
     defer _ = gpa.deinit();
 
@@ -47,13 +47,15 @@ pub fn main() !void {
         },
         .CMD_DEPLOY => {
             if (ostree.isInDevMode() and _checkIfWeAreRoot()) {
-                const _ret = ostree.deployHead();
+                const _ret = try ostree.deployHead();
 
                 if (_ret) {
                     try stdout.print("deploy successful\n", .{});
                 } else {
                     std.log.err("deploy failed", .{});
                 }
+            } else {
+                std.log.err("Need to be in dev mode to deploy", .{});
             }
         },
         .CMD_DEPLOY_HASH => {

@@ -41,6 +41,26 @@ pub const LibOstree = struct {
     }
 
     pub fn deployHead(self: *LibOstree) !bool {
+        // for environment variable handle
+        var _envMap = try std.process.getEnvMap(self.allocator);
+        defer _envMap.deinit();
+
+        // check the machine arch
+        var uts: os.utsname = undefined;
+        const __ret = os.uname(&uts);
+        if (__ret != 0) {
+            std.log.err("error trying to get machine arch", .{});
+            return false;
+        }
+
+        // check if we are running on x86_64
+        const _arch = uts.machine;
+        if (std.mem.eql(u8, std.mem.span(_arch), "x86_64")) {
+            // in x86_64 we need to inject the env variables for grub
+            _envMap.put("OSTREE_BOOT_PARTITION", "/boot");
+            _envMap.put("OSTREE_GRUB2_EXEC", "/usr/lib/ostree/ostree-grub-generator");
+        }
+
         // deploy the head of the default branch
         if (self.deployment) |deployment| {
             var _error: ?*ostree.GError = null;
@@ -56,8 +76,6 @@ pub const LibOstree = struct {
 
             if (_repo) |repo| {
                 const _osName = ostree.ostree_deployment_get_osname(deployment);
-                var _envMap = try std.process.getEnvMap(self.allocator);
-                defer _envMap.deinit();
                 const _branch = _envMap.get("MARS_OSTREE_REPO_BRANCH");
 
                 if (_branch) |branch| {

@@ -300,6 +300,7 @@ pub const LibOstree = struct {
 
                         try std.fs.makeDirAbsolute("/tmp/mars");
                         try std.fs.makeDirAbsolute("/tmp/mars/usr");
+                        try std.fs.makeDirAbsolute("/tmp/mars/etc");
 
                         // do not try to reivent the wheel
                         // call rsync to copy all from upperdir to /tmp/mars/usr
@@ -310,10 +311,24 @@ pub const LibOstree = struct {
                                     "/tmp/mars/usr"
                                 };
 
+                        const _argsEtc = [_][]const u8 {
+                                    "rsync",
+                                    "-a",
+                                    "/etc/",
+                                    "/tmp/mars/etc"
+                                };
+
                         _ = try std.process.Child.run(
                             .{
                                 .allocator = std.heap.page_allocator,
                                 .argv = &_args
+                            }
+                        );
+
+                        _ = try std.process.Child.run(
+                            .{
+                                .allocator = std.heap.page_allocator,
+                                .argv = &_argsEtc
                             }
                         );
 

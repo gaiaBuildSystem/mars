@@ -53,14 +53,6 @@ pub const LibOstree = struct {
             return false;
         }
 
-        // check if we are running on x86_64
-        const _arch = consts.getStrinAsSlice(&uts.machine);
-        if (std.mem.eql(u8, _arch, "x86_64")) {
-            // in x86_64 we need to inject the env variables for grub
-            try _envMap.put("OSTREE_BOOT_PARTITION", "/boot");
-            try _envMap.put("OSTREE_GRUB2_EXEC", "/usr/lib/ostree/ostree-grub-generator");
-        }
-
         // deploy the head of the default branch
         if (self.deployment) |deployment| {
             var _error: ?*ostree.GError = null;

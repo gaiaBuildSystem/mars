@@ -377,134 +377,131 @@ pub const LibOstree = struct {
             }
 
             if (_repo) |repo| {
-                var _envMap = try std.process.getEnvMap(self.allocator);
-                defer _envMap.deinit();
-                const _branch = _envMap.get("MARS_OSTREE_REPO_BRANCH");
+                const _branch = try std.process.getEnvVarOwned(
+                    self.allocator, "MARS_OSTREE_REPO_BRANCH"
+                );
+                defer self.allocator.free(_branch);
+                std.log.debug("repo branch: {s}", .{ _branch });
 
-                if (_branch) |branch| {
-                    const _base = ostree.ostree_deployment_get_csum(deployment);
-                    var _root: ?*ostree.OstreeRepoFile = null;
-                    var _commitChecksum: [*c]const u8 = null;
-                    // the []const u8 is not null terminated
-                    // so we need to make it null terminated
-                    const _originBuffer = try self.allocator.alloc(u8, branch.len + 1);
-                    defer self.allocator.free(_originBuffer);
-                    std.mem.copyBackwards(u8, _originBuffer, branch);
-                    _originBuffer[branch.len] = 0;
+                const _base = ostree.ostree_deployment_get_csum(deployment);
+                var _root: ?*ostree.OstreeRepoFile = null;
+                var _commitChecksum: [*c]const u8 = null;
+                // the []const u8 is not null terminated
+                // so we need to make it null terminated
+                const _originBuffer = try self.allocator.alloc(u8, _branch.len + 1);
+                defer self.allocator.free(_originBuffer);
+                std.mem.copyBackwards(u8, _originBuffer, _branch);
+                _originBuffer[_branch.len] = 0;
 
-                    // now we can use it as a null terminated string C pointer
-                    const _origin: [*c]const u8 = @ptrCast(_originBuffer);
+                // now we can use it as a null terminated string C pointer
+                const _origin: [*c]const u8 = @ptrCast(_originBuffer);
 
-                    // this is a sanity check
-                    std.log.debug("branch: {s}", .{ std.mem.span(_origin) });
-                    std.log.debug("base: {s}", .{ _base });
+                // this is a sanity check
+                std.log.debug("branch: {s}", .{ std.mem.span(_origin) });
+                std.log.debug("base: {s}", .{ _base });
 
-                    std.debug.print("preparing transaction...\n", .{});
-                    _ret = ostree.ostree_repo_prepare_transaction(
-                        repo,
-                        null,
-                        null,
-                        &_error
-                    );
+                std.debug.print("preparing transaction...\n", .{});
+                _ret = ostree.ostree_repo_prepare_transaction(
+                    repo,
+                    null,
+                    null,
+                    &_error
+                );
 
-                    if (_ret == ostree.FALSE) {
-                        try _abortTransaction(repo, _error);
-                        return false;
-                    }
-
-                    // create the commit
-                    _error = null;
-                    std.debug.print("creating commit...\n", .{});
-                    const _mtree = ostree.ostree_mutable_tree_new_from_commit(
-                        repo,
-                        _base,
-                        &_error
-                    );
-
-                    if (_error) | err | {
-                        try _abortTransaction(repo, err);
-                        return false;
-                    }
-
-                    _error = null;
-                    std.debug.print("writing dir tree...\n", .{});
-                    _ret = ostree.ostree_repo_write_dfd_to_mtree(
-                        repo,
-                        fcntl.AT_FDCWD,
-                        "/tmp/mars",
-                        _mtree,
-                        null,
-                        null,
-                        &_error
-                    );
-
-                    if (_ret == ostree.FALSE) {
-                        try _abortTransaction(repo, _error);
-                        return false;
-                    }
-
-                    _error = null;
-                    std.debug.print("writing mtree...\n", .{});
-                    _ret = ostree.ostree_repo_write_mtree(
-                        repo,
-                        _mtree,
-                        @ptrCast(&_root),
-                        null,
-                        &_error
-                    );
-
-                    if (_ret == ostree.FALSE) {
-                        try _abortTransaction(repo, _error);
-                        return false;
-                    }
-
-                    _error = null;
-                    std.debug.print("writing commit...\n", .{});
-                    _ret = ostree.ostree_repo_write_commit(
-                        repo,
-                        _base,
-                        null,
-                        null,
-                        null,
-                        _root,
-                        @ptrCast(&_commitChecksum),
-                        null,
-                        &_error
-                    );
-
-                    if (_ret == ostree.FALSE) {
-                        try _abortTransaction(repo, _error);
-                        return false;
-                    }
-
-                    std.debug.print("setting branch...\n", .{});
-                    ostree.ostree_repo_transaction_set_ref(
-                        repo,
-                        null,
-                        _origin,
-                        _commitChecksum
-                    );
-
-                    _error = null;
-                    std.debug.print("end transaction... \n", .{});
-                    _ret = ostree.ostree_repo_commit_transaction(
-                        repo,
-                        null,
-                        null,
-                        &_error
-                    );
-
-                    if (_ret == ostree.FALSE) {
-                        try _abortTransaction(repo, _error);
-                        return false;
-                    }
-
-                    try _changesPathCleanup();
-                    return true;
+                if (_ret == ostree.FALSE) {
+                    try _abortTransaction(repo, _error);
+                    return false;
                 }
 
-                std.log.err("branch not found", .{});
-                return false;
+                // create the commit
+                _error = null;
+                std.debug.print("creating commit...\n", .{});
+                const _mtree = ostree.ostree_mutable_tree_new_from_commit(
+                    repo,
+                    _base,
+                    &_error
+                );
+
+                if (_error) | err | {
+                    try _abortTransaction(repo, err);
+                    return false;
+                }
+
+                _error = null;
+                std.debug.print("writing dir tree...\n", .{});
+                _ret = ostree.ostree_repo_write_dfd_to_mtree(
+                    repo,
+                    fcntl.AT_FDCWD,
+                    "/tmp/mars",
+                    _mtree,
+                    null,
+                    null,
+                    &_error
+                );
+
+                if (_ret == ostree.FALSE) {
+                    try _abortTransaction(repo, _error);
+                    return false;
+                }
+
+                _error = null;
+                std.debug.print("writing mtree...\n", .{});
+                _ret = ostree.ostree_repo_write_mtree(
+                    repo,
+                    _mtree,
+                    @ptrCast(&_root),
+                    null,
+                    &_error
+                );
+
+                if (_ret == ostree.FALSE) {
+                    try _abortTransaction(repo, _error);
+                    return false;
+                }
+
+                _error = null;
+                std.debug.print("writing commit...\n", .{});
+                _ret = ostree.ostree_repo_write_commit(
+                    repo,
+                    _base,
+                    null,
+                    null,
+                    null,
+                    _root,
+                    @ptrCast(&_commitChecksum),
+                    null,
+                    &_error
+                );
+
+                if (_ret == ostree.FALSE) {
+                    try _abortTransaction(repo, _error);
+                    return false;
+                }
+
+                std.debug.print("setting branch...\n", .{});
+                ostree.ostree_repo_transaction_set_ref(
+                    repo,
+                    null,
+                    _origin,
+                    _commitChecksum
+                );
+
+                _error = null;
+                std.debug.print("end transaction... \n", .{});
+                _ret = ostree.ostree_repo_commit_transaction(
+                    repo,
+                    null,
+                    null,
+                    &_error
+                );
+
+                if (_ret == ostree.FALSE) {
+                    try _abortTransaction(repo, _error);
+                    return false;
+                }
+
+                try _changesPathCleanup();
+                return true;
             }
 
             std.log.err("repo not found", .{});

@@ -16,10 +16,9 @@ fn _checkIfWeAreRoot() bool {
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var ostree = libOstree.LibOstree.init(gpa.allocator());
+    const gpa = std.heap.page_allocator;
+    var ostree = libOstree.LibOstree.init(gpa);
     const args = std.os.argv[1..std.os.argv.len];
-    defer _ = gpa.deinit();
 
     if (args.len == 0) {
         try stdout.print(consts.MARS_HELP_S, .{});

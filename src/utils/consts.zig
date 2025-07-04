@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const MARS_VERSION_S = "0.1.0";
+pub const MARS_VERSION_S = "0.0.2";
 
 pub const MARS_HELP_S =
 \\

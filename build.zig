@@ -3,6 +3,12 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
+    if (target.query.cpu_arch == .x86_64) {
+        const baseline_cpu = std.zig.system.cpu.baseline(.x86_64) orelse
+            @panic("Could not get x86_64 baseline CPU");
+        target.cpu = baseline_cpu;
+    }
+
     const exe_native = b.addExecutable(.{
         .name = "mars",
         .root_source_file = b.path("src/main.zig"),

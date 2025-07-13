@@ -164,6 +164,19 @@ pub const LibOstree = struct {
                         return false;
                     }
 
+                    // also set the upgrade_available flag
+                    const _args = [_][]const u8 {
+                        "fw_setenv",
+                        "upgrade_available",
+                        "1"
+                    };
+                    _ = try std.process.Child.run(
+                        .{
+                            .allocator = std.heap.page_allocator,
+                            .argv = &_args
+                        }
+                    );
+
                     return true;
                 }
 

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const MARS_VERSION_S = "0.0.2";
+pub const MARS_VERSION_S = "0.0.3";
 
 pub const MARS_HELP_S =
 \\
@@ -12,7 +12,7 @@ pub const MARS_HELP_S =
 \\      deploy           - Deploy the head of the default branch
 \\      deploy-hash      - Get the booted deployment hash
 \\      help             - Print this help message
-\\      info             - Show information about the current state of deployment
+\\      status           - Show the status of the current state of deployment
 \\      rollback         - Rollback the deployment to the previous commit
 \\
 \\
@@ -25,7 +25,7 @@ pub const MarsCommands = enum {
     CMD_DEPLOY_HASH,
     CMD_ROLLBACK,
     CMD_HELP,
-    CMD_INFO,
+    CMD_STATUS,
     CMD_VERSION
 };
 
@@ -56,8 +56,8 @@ pub fn getMarsCommandHash(command: [*:0]u8) MarsCommands {
         return MarsCommands.CMD_HELP;
     }
 
-    if (std.mem.eql(u8, _slice, "info")) {
-        return MarsCommands.CMD_INFO;
+    if (std.mem.eql(u8, _slice, "status")) {
+        return MarsCommands.CMD_STATUS;
     }
 
     if (std.mem.eql(u8, _slice, "rollback")) {

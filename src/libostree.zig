@@ -988,7 +988,7 @@ pub const LibOstree = struct {
         }
     }
 
-    pub fn getInfo(self: *LibOstree) !void {
+    pub fn getStatus(self: *LibOstree) !void {
         const stdout = std.io.getStdOut().writer();
 
         // get the deployment hash

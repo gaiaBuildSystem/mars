@@ -73,6 +73,9 @@ pub fn main() !void {
                 std.log.err("Need to be in dev mode to commit", .{});
             }
         },
+        .CMD_INFO => {
+            try ostree.getInfo();
+        },
         .CMD_ROLLBACK => {
             std.log.err("NOT IMPLEMENTED", .{});
         },

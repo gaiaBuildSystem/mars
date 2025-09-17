@@ -12,6 +12,7 @@ pub const MARS_HELP_S =
 \\      deploy           - Deploy the head of the default branch
 \\      deploy-hash      - Get the booted deployment hash
 \\      help             - Print this help message
+\\      info             - Show information about the current state of deployment
 \\      rollback         - Rollback the deployment to the previous commit
 \\
 \\
@@ -24,6 +25,7 @@ pub const MarsCommands = enum {
     CMD_DEPLOY_HASH,
     CMD_ROLLBACK,
     CMD_HELP,
+    CMD_INFO,
     CMD_VERSION
 };
 
@@ -54,6 +56,10 @@ pub fn getMarsCommandHash(command: [*:0]u8) MarsCommands {
         return MarsCommands.CMD_HELP;
     }
 
+    if (std.mem.eql(u8, _slice, "info")) {
+        return MarsCommands.CMD_INFO;
+    }
+
     if (std.mem.eql(u8, _slice, "rollback")) {
         return MarsCommands.CMD_ROLLBACK;
     }
@@ -63,5 +69,7 @@ pub fn getMarsCommandHash(command: [*:0]u8) MarsCommands {
     }
 
     std.log.err("command [{s}] not found", .{ _slice });
+
+    // return a default value
     return MarsCommands.CMD_HELP;
 }

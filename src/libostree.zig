@@ -797,11 +797,13 @@ pub const LibOstree = struct {
         }
 
         const _parent = ostree.ostree_commit_get_parent(_commit);
-        if (_parent == null) {
+        if (_parent == null and !dev) {
             try stdout.print("Parent: \tInitial Commit\n", .{});
             return;
-        } else {
+        } else if (!dev) {
             try stdout.print("Parent: \t{s}\n", .{ _parent });
+        } else {
+            try stdout.print("Parent: \tDevelopment Mode\n", .{});
         }
 
         try stdout.print("\nGetting diff please wait ...\n", .{});

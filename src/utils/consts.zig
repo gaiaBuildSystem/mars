@@ -14,6 +14,7 @@ pub const MARS_HELP_S =
 \\      help             - Print this help message
 \\      status           - Show the status of the current state of deployment
 \\      rollback         - Rollback the deployment to the previous commit
+\\      version          - Show the version of mars
 \\
 \\
 ;

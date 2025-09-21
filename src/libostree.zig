@@ -314,6 +314,23 @@ pub const LibOstree = struct {
         @panic("Failed to open /proc/mounts, are we in dev mode?");
     }
 
+    fn _prepareUsrEtcDiff() !void {
+        const _args = [_][]const u8 {
+            "rsync",
+            "-a",
+            "--delete",
+            "/etc/",
+            "/usr/etc"
+        };
+
+        _ = try std.process.Child.run(
+            .{
+                .allocator = std.heap.page_allocator,
+                .argv = &_args
+            }
+        );
+    }
+
     fn _prepareChangesPath() !std.ArrayList([]u8) {
         const _upperdirSlash = try _getUpperdir();
 
@@ -328,22 +345,6 @@ pub const LibOstree = struct {
         // Copy files from upperdir, but collect whiteout files to handle deletions
         var deletions = std.ArrayList([]u8).init(std.heap.page_allocator);
         try _copyWithWhiteoutProcessing(_upperdirSlash, "/tmp/mars/usr", &deletions, _upperdirSlash);
-
-        // Also copy /etc/ as before
-        const _argsEtc = [_][]const u8 {
-                    "rsync",
-                    "-a",
-                    "--delete",
-                    "/etc/",
-                    "/tmp/mars/usr/etc"
-                };
-
-        _ = try std.process.Child.run(
-            .{
-                .allocator = std.heap.page_allocator,
-                .argv = &_argsEtc
-            }
-        );
 
         return deletions;
     }
@@ -522,6 +523,7 @@ pub const LibOstree = struct {
     }
 
     pub fn commit(self: *LibOstree) !bool {
+        try _prepareUsrEtcDiff();
         var deletions = try _prepareChangesPath();
         defer {
             for (deletions.items) |path| {
@@ -805,6 +807,7 @@ pub const LibOstree = struct {
             try stdout.print("Parent: \t{s}\n", .{ _parent });
         } else {
             try stdout.print("Parent: \tDevelopment Mode\n", .{});
+            try _prepareUsrEtcDiff();
         }
 
         try stdout.print("\nGetting diff please wait ...\n", .{});

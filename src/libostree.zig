@@ -333,6 +333,7 @@ pub const LibOstree = struct {
         const _argsEtc = [_][]const u8 {
                     "rsync",
                     "-a",
+                    "--delete",
                     "/etc/",
                     "/tmp/mars/usr/etc"
                 };

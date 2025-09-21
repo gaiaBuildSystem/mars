@@ -806,7 +806,7 @@ pub const LibOstree = struct {
         } else if (!dev) {
             try stdout.print("Parent: \t{s}\n", .{ _parent });
         } else {
-            try stdout.print("Parent: \tDevelopment Mode\n", .{});
+            try stdout.print("Parent: \t{s}\n", .{ _ref });
             try _prepareUsrEtcDiff();
         }
 
@@ -1019,7 +1019,12 @@ pub const LibOstree = struct {
                 try stdout.print("false\n", .{});
             }
 
-            try stdout.print("Commit: \t{s}\n", .{ std.mem.span(_hash) });
+            if (_devMode) {
+                try stdout.print("Commit: \tdev mode\n", .{});
+            } else {
+                try stdout.print("Commit: \t{s}\n", .{ std.mem.span(_hash) });
+            }
+
             try stdout.print("OS:     \t{s}\n", .{ std.mem.span(_os) });
             try stdout.print("Branch: \t{s}\n", .{ _branch });
             defer self.allocator.free(_branch);

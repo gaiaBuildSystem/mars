@@ -342,21 +342,55 @@ pub const LibOstree = struct {
         try std.fs.makeDirAbsolute("/tmp/mars");
         try std.fs.makeDirAbsolute("/tmp/mars/usr");
 
-        // Copy files from upperdir, but collect whiteout files to handle deletions
+        // First, collect whiteout files to handle deletions
         var deletions = std.ArrayList([]u8).init(std.heap.page_allocator);
-        try _copyWithWhiteoutProcessing(_upperdirSlash, "/tmp/mars/usr", &deletions, _upperdirSlash);
+        try _collectWhiteoutDeletions(
+            _upperdirSlash,
+            &deletions,
+            _upperdirSlash
+        );
+
+        // Now use rsync to actually copy the files (preserving symlinks and other file types)
+        const upperdir_with_slash = if (std.mem.endsWith(u8, _upperdirSlash, "/"))
+            _upperdirSlash
+        else
+            try std.fmt.allocPrint(std.heap.page_allocator, "{s}/", .{_upperdirSlash});
+
+        const _args = [_][]const u8{
+            "rsync",
+            "-a",
+            "--delete",
+            upperdir_with_slash,
+            "/tmp/mars/usr/"
+        };
+
+        _ = try std.process.Child.run(.{
+            .allocator = std.heap.page_allocator,
+            .argv = &_args
+        });
+
+        // at this point we should have the whiteout files collected
+        // let's remove then from the /tmp/mars/usr
+        // becuse this can trigger an error to ostree when trying to commit
+        // a non regular or symlink file
+        for (deletions.items) |path| {
+            const full_path = try std.fmt.allocPrint(
+                std.heap.page_allocator,
+                "/tmp/mars/{s}",
+                .{ path }
+            );
+
+            std.log.debug("Removing whiteout file from changes: {s}", .{full_path});
+            // remove the whiteout file
+            try std.fs.cwd().deleteFile(full_path);
+            std.heap.page_allocator.free(full_path);
+        }
 
         return deletions;
     }
 
-    fn _copyWithWhiteoutProcessing(src_path: []const u8, dest_path: []const u8, deletions: *std.ArrayList([]u8), upperdir_root: []const u8) !void {
+    fn _collectWhiteoutDeletions(src_path: []const u8, deletions: *std.ArrayList([]u8), upperdir_root: []const u8) !void {
         const allocator = std.heap.page_allocator;
-
-        // First ensure destination directory exists
-        std.fs.makeDirAbsolute(dest_path) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
-        };
 
         // Open source directory
         var src_dir = std.fs.cwd().openDir(src_path, .{ .iterate = true }) catch |err| switch (err) {
@@ -369,17 +403,11 @@ pub const LibOstree = struct {
 
         while (try iterator.next()) |entry| {
             const src_item = try std.fs.path.join(allocator, &[_][]const u8{ src_path, entry.name });
-            const dest_item = try std.fs.path.join(allocator, &[_][]const u8{ dest_path, entry.name });
-
-            // Free immediately after use instead of defer
-            defer {
-                allocator.free(src_item);
-                allocator.free(dest_item);
-            }
+            defer allocator.free(src_item);
 
             if (entry.kind == .directory) {
-                // Recursively copy subdirectories
-                try _copyWithWhiteoutProcessing(src_item, dest_item, deletions, upperdir_root);
+                // Recursively process subdirectories
+                try _collectWhiteoutDeletions(src_item, deletions, upperdir_root);
             } else {
                 // Check if it's a whiteout file (char device with 0 size)
                 const file_stat = std.fs.cwd().statFile(src_item) catch continue;
@@ -417,13 +445,7 @@ pub const LibOstree = struct {
                     } else {
                         std.log.warn("Whiteout file {s} not under upperdir {s}", .{src_item, upperdir_clean});
                     }
-                    continue;
                 }
-
-                // Copy regular files
-                std.fs.cwd().copyFile(src_item, std.fs.cwd(), dest_item, .{}) catch |err| {
-                    std.log.warn("Failed to copy {s}: {}", .{ src_item, err });
-                };
             }
         }
     }
@@ -820,7 +842,15 @@ pub const LibOstree = struct {
         if (dev) {
             _dpref = "/usr/";
             // for dev changes instead of a commit we have the deployment folder
-            _ret = ostree.ostree_repo_read_commit(repo, _head, &src_file, null, null, &_error);
+            _ret = ostree.ostree_repo_read_commit(
+                repo,
+                _head,
+                &src_file,
+                null,
+                null,
+                &_error
+            );
+
             if (_ret == ostree.FALSE) {
                 if (_error) |err| {
                     std.log.err("Failed to read parent commit: {s}", .{err.message});
@@ -870,7 +900,18 @@ pub const LibOstree = struct {
             .owner_gid = -1,
         };
 
-        _ret = ostree.ostree_diff_dirs_with_options(ostree.OSTREE_DIFF_FLAGS_NONE, src_file, target_file, modified, removed, added, &diff_opts, null, &_error);
+        _ret = ostree.ostree_diff_dirs_with_options(
+            ostree.OSTREE_DIFF_FLAGS_NONE,
+            src_file,
+            target_file,
+            modified,
+            removed,
+            added,
+            &diff_opts,
+            null,
+            &_error
+        );
+
         if (_ret == ostree.FALSE) {
             if (_error) |err| {
                 std.log.err("Failed to diff commits: {s}", .{err.message});

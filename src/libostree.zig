@@ -1079,4 +1079,113 @@ pub const LibOstree = struct {
             std.log.err("deployment not found", .{});
         }
     }
+
+    pub fn rollback(self: *LibOstree) !bool {
+        var _error: ?*ostree.GError = null;
+        var _ret: ostree.gboolean = ostree.FALSE;
+        const _repo = ostree.ostree_repo_new_default();
+        _ret = ostree.ostree_repo_open(_repo, null, &_error);
+
+        if (_error) | err | {
+            std.log.err("{s}", .{ err.message });
+            return false;
+        }
+
+        if (_repo) |repo| {
+            // resolve the _ref
+            var _head: [*c]u8 = null;
+            const _ref = try self.getDeployHash();
+
+            _ret = ostree.ostree_repo_resolve_rev(
+                repo,
+                _ref,
+                ostree.FALSE,
+                &_head,
+                &_error
+            );
+            if (_ret == ostree.FALSE) {
+                if (_error) |err| {
+                    std.log.err("{s}", .{ err.message });
+                }
+                return false;
+            }
+
+            // load the commit
+            var _commit: ?*ostree.GVariant = null;
+            _ret = ostree.ostree_repo_load_variant(
+                repo,
+                ostree.OSTREE_OBJECT_TYPE_COMMIT,
+                _head,
+                &_commit,
+                &_error
+            );
+            if (_ret == ostree.FALSE) {
+                if (_error) |err| {
+                    std.log.err("{s}", .{ err.message });
+                }
+                return false;
+            }
+
+            const _parent = ostree.ostree_commit_get_parent(_commit);
+
+            if (_parent == null) {
+                std.log.err("No parent commit, cannot rollback", .{});
+                return false;
+            }
+
+            // Create new deployment from parent commit
+            if (self.deployment) |deployment| {
+                const _deploymentGKeyFile = ostree.ostree_deployment_get_origin(deployment);
+                const _osName = ostree.ostree_deployment_get_osname(deployment);
+
+                // Create deployment with parent commit
+                var _newDeployment: ?*ostree.OstreeDeployment = null;
+
+                _ret = ostree.ostree_sysroot_deploy_tree(
+                    self.sysroot,
+                    _osName,
+                    _parent,
+                    _deploymentGKeyFile,
+                    null,
+                    null,
+                    &_newDeployment,
+                    null,
+                    &_error
+                );
+
+                if (_ret == ostree.FALSE) {
+                    if (_error) |err| {
+                        std.log.err("Failed to deploy parent commit: {s}", .{ err.message });
+                    }
+                    return false;
+                }
+
+                // Write the deployment to make the rollback permanent
+                _ret = ostree.ostree_sysroot_simple_write_deployment(
+                    self.sysroot,
+                    _osName,
+                    _newDeployment,
+                    null, // merge deployment
+                    ostree.OSTREE_SYSROOT_SIMPLE_WRITE_DEPLOYMENT_FLAGS_NO_CLEAN,
+                    null, // cancellable
+                    &_error
+                );
+
+                if (_ret == ostree.FALSE) {
+                    if (_error) |err| {
+                        std.log.err("Failed to write rollback deployment: {s}", .{ err.message });
+                    }
+                    return false;
+                }
+
+                std.log.info("Successfully rolled back to parent commit: {s}", .{_parent});
+                return true;
+            } else {
+                std.log.err("No deployment found", .{});
+                return false;
+            }
+        }
+
+        return false;
+    }
 };

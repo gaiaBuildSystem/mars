@@ -77,7 +77,12 @@ pub fn main() !void {
             try ostree.getStatus();
         },
         .CMD_ROLLBACK => {
-            std.log.err("NOT IMPLEMENTED", .{});
+            const _ret = try ostree.rollback();
+            if (_ret) {
+                try stdout.print("rollback successful\n", .{});
+            } else {
+                std.log.err("rollback failed\n", .{});
+            }
         },
         .CMD_VERSION => {
             try stdout.print("{s}\n", .{consts.MARS_VERSION_S});

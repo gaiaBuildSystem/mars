@@ -11,6 +11,7 @@ pub const MARS_HELP_S =
 \\      dev              - Set the device to develop mode
 \\      deploy           - Deploy the head of the default branch
 \\      deploy-hash      - Get the booted deployment hash
+\\      deploy-next      - Get the next pending hash to be deployed
 \\      help             - Print this help message
 \\      status           - Show the status of the current state of deployment
 \\      rollback         - Rollback the deployment to the previous commit
@@ -24,6 +25,7 @@ pub const MarsCommands = enum {
     CMD_DEV,
     CMD_DEPLOY,
     CMD_DEPLOY_HASH,
+    CMD_DEPLOY_NEXT,
     CMD_ROLLBACK,
     CMD_HELP,
     CMD_STATUS,
@@ -51,6 +53,10 @@ pub fn getMarsCommandHash(command: [*:0]u8) MarsCommands {
 
     if (std.mem.eql(u8, _slice, "deploy-hash")) {
         return MarsCommands.CMD_DEPLOY_HASH;
+    }
+
+    if (std.mem.eql(u8, _slice, "deploy-next")) {
+        return MarsCommands.CMD_DEPLOY_NEXT;
     }
 
     if (std.mem.eql(u8, _slice, "help")) {

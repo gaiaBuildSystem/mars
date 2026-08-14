@@ -61,6 +61,10 @@ pub fn main() !void {
             const hash = try ostree.getDeployHash();
             try stdout.print("{s}\n", .{hash});
         },
+        .CMD_DEPLOY_NEXT => {
+            const hash = try ostree.getNextDeployHash();
+            try stdout.print("{s}\n", .{hash});
+        },
         .CMD_COMMIT => {
             if (ostree.isInDevMode()) {
                 const _ret = try ostree.commit();

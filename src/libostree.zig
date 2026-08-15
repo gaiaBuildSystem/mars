@@ -231,6 +231,15 @@ pub const LibOstree = struct {
         @panic("deployment not found");
     }
 
+    pub fn getDeploySerial(self: *LibOstree) i32 {
+        // the ".N" suffix ostree admin status shows after the hash
+        if (self.deployment) |deployment| {
+            return ostree.ostree_deployment_get_deployserial(deployment);
+        }
+
+        @panic("deployment not found");
+    }
+
     pub fn getNextDeployHash(self: *LibOstree) ?[*c]const u8 {
         // same lookup ostree admin status uses to label a deployment "(pending)"
         if (self.sysroot) |sysroot| {
@@ -241,7 +250,21 @@ pub const LibOstree = struct {
                 return ostree.ostree_deployment_get_csum(pending);
             }
 
-            // std.log.err("no deploy pending", .{});
+            return null;
+        }
+
+        @panic("sysroot not found");
+    }
+
+    pub fn getNextDeploySerial(self: *LibOstree) ?i32 {
+        if (self.sysroot) |sysroot| {
+            var _pending: ?*ostree.OstreeDeployment = null;
+            ostree.ostree_sysroot_query_deployments_for(sysroot, null, &_pending, null);
+
+            if (_pending) |pending| {
+                return ostree.ostree_deployment_get_deployserial(pending);
+            }
+
             return null;
         }
 

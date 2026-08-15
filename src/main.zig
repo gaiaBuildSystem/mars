@@ -59,11 +59,13 @@ pub fn main() !void {
         },
         .CMD_DEPLOY_HASH => {
             const hash = try ostree.getDeployHash();
-            try stdout.print("{s}\n", .{hash});
+            const serial = ostree.getDeploySerial();
+            try stdout.print("{s}.{d}\n", .{ hash, serial });
         },
         .CMD_DEPLOY_NEXT => {
             if (ostree.getNextDeployHash()) |hash| {
-                try stdout.print("{s}\n", .{hash});
+                const serial = ostree.getNextDeploySerial().?;
+                try stdout.print("{s}.{d}\n", .{ hash, serial });
             } else {
                 std.log.err("No pending deploy found", .{});
             }

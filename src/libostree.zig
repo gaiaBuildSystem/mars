@@ -231,50 +231,21 @@ pub const LibOstree = struct {
         @panic("deployment not found");
     }
 
-    pub fn getNextDeployHash(self: *LibOstree) ![*c]u8 {
-        var _error: ?*ostree.GError = null;
-        var _ret: ostree.gboolean = ostree.FALSE;
-        const _repo = ostree.ostree_repo_new_default();
-        _ret = ostree.ostree_repo_open(_repo, null, &_error);
+    pub fn getNextDeployHash(self: *LibOstree) ?[*c]const u8 {
+        // same lookup ostree admin status uses to label a deployment "(pending)"
+        if (self.sysroot) |sysroot| {
+            var _pending: ?*ostree.OstreeDeployment = null;
+            ostree.ostree_sysroot_query_deployments_for(sysroot, null, &_pending, null);
 
-        if (_error) | err | {
-            std.log.err("{s}", .{ err.message });
-            @panic("failed to open repo");
-        }
-
-        if (_repo) |repo| {
-            const _branch = try self.getBranch();
-            defer self.allocator.free(_branch);
-
-            // the []const u8 is not null terminated
-            // so we need to make it null terminated
-            const _originBuffer = try self.allocator.alloc(u8, _branch.len + 1);
-            defer self.allocator.free(_originBuffer);
-            std.mem.copyBackwards(u8, _originBuffer, _branch);
-            _originBuffer[_branch.len] = 0;
-
-            // now we can use it as a null terminated string C pointer
-            const _origin: [*c]const u8 = @ptrCast(_originBuffer);
-
-            var _head: [*c]u8 = null;
-            _error = null;
-            _ret = ostree.ostree_repo_resolve_rev(
-                repo,
-                _origin,
-                ostree.FALSE,
-                &_head,
-                &_error
-            );
-
-            if (_error) | err | {
-                std.log.err("{s}", .{ err.message });
-                @panic("failed to resolve branch head");
+            if (_pending) |pending| {
+                return ostree.ostree_deployment_get_csum(pending);
             }
 
-            return _head;
+            // std.log.err("no deploy pending", .{});
+            return null;
         }
 
-        @panic("repo not found");
+        @panic("sysroot not found");
     }
 
     pub fn isInDevMode(self: *LibOstree) bool {

@@ -62,8 +62,11 @@ pub fn main() !void {
             try stdout.print("{s}\n", .{hash});
         },
         .CMD_DEPLOY_NEXT => {
-            const hash = try ostree.getNextDeployHash();
-            try stdout.print("{s}\n", .{hash});
+            if (ostree.getNextDeployHash()) |hash| {
+                try stdout.print("{s}\n", .{hash});
+            } else {
+                std.log.err("No pending deploy found", .{});
+            }
         },
         .CMD_COMMIT => {
             if (ostree.isInDevMode()) {

@@ -26,6 +26,38 @@ Below is a list of available subcommands and a short description:
 - `rollback`: Rollback the deployment to the previous commit (not implemented).
 - `version`: Print the Mars version.
 
+## Examples of Use
+
+A common workflow is using PhobOS for development and evaluation on a target device:
+
+1. Put the device into development mode. This unlocks the root filesystem for changes, such as `apt update` / `apt install`:
+
+    ```sh
+    mars dev
+    apt update
+    apt install <package>
+    ```
+
+2. Once you're happy with the changes, commit them to create a new ostree commit:
+
+    ```sh
+    mars commit
+    ```
+
+3. Deploy the new commit as the next boot target:
+
+    ```sh
+    mars deploy
+    ```
+
+4. Restart the device so it boots into the newly deployed commit:
+
+    ```sh
+    reboot
+    ```
+
+You can check the state of the deployment at any point with `mars status`.
+
 ## Building
 
 Mars is written in Zig and uses the Zig build system. To build Mars, you need to have Zig installed on your system, and then run the build on the root of the project:

@@ -21,9 +21,10 @@ Below is a list of available subcommands and a short description:
 - `dev`: Set the device on development mode.
 - `deploy`: Deploy the head of the default branch (need to be in dev mode).
 - `deploy-hash`: Print the booted deployment hash.
+- `deploy-next`: Print the hash and serial of the next pending deployment.
 - `help`: Print a help message.
 - `status`: Show the status of the current state of deployment.
-- `rollback`: Rollback the deployment to the previous commit (not implemented).
+- `rollback`: Rollback the deployment to the previous commit.
 - `version`: Print the Mars version.
 
 ## Examples of Use

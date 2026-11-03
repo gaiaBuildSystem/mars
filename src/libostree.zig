@@ -10,9 +10,6 @@ const ostree = @cImport({
 const fcntl = @cImport({
     @cInclude("fcntl.h");
 });
-const mntent = @cImport({
-    @cInclude("mntent.h");
-});
 
 extern threadlocal var errno: c_int;
 
@@ -294,66 +291,6 @@ pub const LibOstree = struct {
         return _branch;
     }
 
-    fn _getMntOpt(opts: []const u8, key: []const u8) ?[]const u8 {
-        var it = std.mem.tokenize(u8, opts, ",");
-        while (it.next()) |entry| {
-            if (
-                std.mem.startsWith(u8, entry, key) and
-                entry.len > key.len and entry[key.len] == '='
-            ) {
-                return entry[key.len + 1 ..];
-            }
-        }
-
-        return null;
-    }
-
-
-    fn _pathExists(path: []const u8) !bool {
-        const fs = std.fs;
-        const cwd = fs.cwd();
-
-        cwd.access(path, .{}) catch |err| switch (err) {
-            error.FileNotFound => return false,
-            else => return err,
-        };
-
-        return true;
-    }
-
-    fn _getUpperdir() ![]const u8 {
-        const _file = mntent.setmntent("/proc/mounts", "r");
-
-        if (_file) |file| {
-            var _entry = mntent.getmntent(file);
-
-            while (_entry) |entry| {
-                const _typeS = consts.getStrinAsSlice(entry.*.mnt_type);
-
-                if (std.mem.eql(u8, _typeS, "overlay")) {
-                    const _optSlice = consts.getStrinAsSlice(entry.*.mnt_opts);
-                    const _upperdir = _getMntOpt(_optSlice, "upperdir");
-
-                    if (_upperdir) |upperdir| {
-                        const _upperdirSlash = try std.fmt.allocPrint(
-                            std.heap.page_allocator,
-                            "{s}/",
-                            .{ upperdir }
-                        );
-
-                        return _upperdirSlash;
-                    }
-                }
-
-                _entry = mntent.getmntent(file);
-            }
-
-            @panic("Failed to get dev folder, are we in dev mode?");
-        }
-
-        @panic("Failed to open /proc/mounts, are we in dev mode?");
-    }
-
     fn _prepareUsrEtcDiff() !void {
         const _args = [_][]const u8 {
             "rsync",
@@ -363,216 +300,35 @@ pub const LibOstree = struct {
             "/usr/etc"
         };
 
-        _ = try std.process.Child.run(
+        const _res = try std.process.Child.run(
             .{
                 .allocator = std.heap.page_allocator,
                 .argv = &_args
             }
         );
-    }
 
-    fn _prepareChangesPath() !std.ArrayList([]u8) {
-        const _upperdirSlash = try _getUpperdir();
-
-        // if the /tmp/mars already exists simple remove it
-        if (try _pathExists("/tmp/mars")) {
-            try std.fs.cwd().deleteTree("/tmp/mars");
+        switch (_res.term) {
+            .Exited => |code| if (code == 0) return,
+            else => {}
         }
 
-        try std.fs.makeDirAbsolute("/tmp/mars");
-        try std.fs.makeDirAbsolute("/tmp/mars/usr");
-
-        // First, collect whiteout files to handle deletions
-        var deletions = std.ArrayList([]u8).init(std.heap.page_allocator);
-        try _collectWhiteoutDeletions(
-            _upperdirSlash,
-            &deletions,
-            _upperdirSlash
-        );
-
-        // Now use rsync to actually copy the files (preserving symlinks and other file types)
-        const upperdir_with_slash = if (std.mem.endsWith(u8, _upperdirSlash, "/"))
-            _upperdirSlash
-        else
-            try std.fmt.allocPrint(std.heap.page_allocator, "{s}/", .{_upperdirSlash});
-
-        const _args = [_][]const u8{
-            "rsync",
-            "-a",
-            "--delete",
-            upperdir_with_slash,
-            "/tmp/mars/usr/"
-        };
-
-        _ = try std.process.Child.run(.{
-            .allocator = std.heap.page_allocator,
-            .argv = &_args
-        });
-
-        // at this point we should have the whiteout files collected
-        // let's remove then from the /tmp/mars/usr
-        // becuse this can trigger an error to ostree when trying to commit
-        // a non regular or symlink file
-        for (deletions.items) |path| {
-            const full_path = try std.fmt.allocPrint(
-                std.heap.page_allocator,
-                "/tmp/mars/{s}",
-                .{ path }
-            );
-
-            std.log.debug("Removing whiteout file from changes: {s}", .{full_path});
-            // remove the whiteout file
-            try std.fs.cwd().deleteFile(full_path);
-            std.heap.page_allocator.free(full_path);
-        }
-
-        return deletions;
+        std.log.err("rsync /etc to /usr/etc failed: {s}", .{ _res.stderr });
+        return error.RsyncFailed;
     }
 
-    fn _collectWhiteoutDeletions(src_path: []const u8, deletions: *std.ArrayList([]u8), upperdir_root: []const u8) !void {
-        const allocator = std.heap.page_allocator;
-
-        // Open source directory
-        var src_dir = std.fs.cwd().openDir(src_path, .{ .iterate = true }) catch |err| switch (err) {
-            error.FileNotFound => return,
-            else => return err,
-        };
-        defer src_dir.close();
-
-        var iterator = src_dir.iterate();
-
-        while (try iterator.next()) |entry| {
-            const src_item = try std.fs.path.join(allocator, &[_][]const u8{ src_path, entry.name });
-            defer allocator.free(src_item);
-
-            if (entry.kind == .directory) {
-                // Recursively process subdirectories
-                try _collectWhiteoutDeletions(src_item, deletions, upperdir_root);
-            } else {
-                // Check if it's a whiteout file (char device with 0 size)
-                const file_stat = std.fs.cwd().statFile(src_item) catch continue;
-
-                if (file_stat.kind == .character_device and file_stat.size == 0) {
-                    // This is a whiteout file - record the deletion path
-                    std.log.debug("Found whiteout file for deletion: {s}", .{entry.name});
-
-                    // Calculate the relative path from upperdir root to this whiteout file
-                    // src_item is the full path to the whiteout file
-                    // upperdir_root is the upperdir root path
-                    // We need to get the relative path and then prepend "/usr"
-
-                    // Remove trailing slash from upperdir_root for comparison
-                    const upperdir_clean = if (std.mem.endsWith(u8, upperdir_root, "/"))
-                        upperdir_root[0..upperdir_root.len-1]
-                    else
-                        upperdir_root;
-
-                    if (std.mem.startsWith(u8, src_item, upperdir_clean)) {
-                        // Get the relative path from upperdir root
-                        const relative_from_upperdir = src_item[upperdir_clean.len..];
-                        // Remove leading slash if present
-                        const clean_relative = if (std.mem.startsWith(u8, relative_from_upperdir, "/"))
-                            relative_from_upperdir[1..]
-                        else
-                            relative_from_upperdir;
-
-                        // Build the ostree deletion path: /usr + relative path
-                        const deletion_path = try std.fmt.allocPrint(allocator, "/usr/{s}", .{clean_relative});
-
-                        std.log.debug("Adding to deletions array: '{s}' (ptr: {*}, len: {})", .{ deletion_path, deletion_path.ptr, deletion_path.len });
-                        try deletions.append(deletion_path);
-                        std.log.debug("Deletions array now has {} items", .{deletions.items.len});
-                    } else {
-                        std.log.warn("Whiteout file {s} not under upperdir {s}", .{src_item, upperdir_clean});
-                    }
-                }
-            }
+    // ostree can only commit regular files, symlinks and dirs
+    fn _commitFilter(
+        _: ?*ostree.OstreeRepo,
+        path: [*c]const u8,
+        file_info: ?*ostree.GFileInfo,
+        _: ?*anyopaque
+    ) callconv(.C) ostree.OstreeRepoCommitFilterResult {
+        if (ostree.g_file_info_get_file_type(file_info) == ostree.G_FILE_TYPE_SPECIAL) {
+            std.log.warn("skipping special file: /usr{s}", .{ path });
+            return ostree.OSTREE_REPO_COMMIT_FILTER_SKIP;
         }
-    }
 
-    fn _changesPathCleanup() !void {
-        const _args = [_][]const u8 {
-            "rm",
-            "-rf",
-            "/tmp/mars"
-        };
-
-        _ = try std.process.Child.run(
-            .{
-                .allocator = std.heap.page_allocator,
-                .argv = &_args
-            }
-        );
-    }
-
-    fn _applyDeletions(mtree: *ostree.OstreeMutableTree, deletions: *std.ArrayList([]u8)) !void {
-        for (deletions.items) |path| {
-            std.log.debug("Applying deletion: {s}", .{path});
-
-            // Split the path into components (skip leading slash)
-            const path_without_leading_slash = if (std.mem.startsWith(u8, path, "/")) path[1..] else path;
-
-            var path_components = std.ArrayList([]const u8).init(std.heap.page_allocator);
-            defer path_components.deinit();
-
-            var iter = std.mem.split(u8, path_without_leading_slash, "/");
-            while (iter.next()) |component| {
-                try path_components.append(component);
-            }
-
-            if (path_components.items.len == 0) {
-                std.log.debug("Empty path, skipping: {s}", .{path});
-                continue;
-            }
-
-            // Navigate through all directories except the last component (which is the file/dir to remove)
-            var current_tree = mtree;
-            var _error: ?*ostree.GError = null;
-
-            // Navigate through all parent directories
-            for (path_components.items[0..path_components.items.len-1]) |dir_name| {
-                std.log.debug("Navigating to directory: {s}", .{dir_name});
-
-                var next_tree: ?*ostree.OstreeMutableTree = null;
-                const dir_name_z = try std.heap.page_allocator.dupeZ(u8, dir_name);
-                defer std.heap.page_allocator.free(dir_name_z);
-
-                _error = null;
-                _ = ostree.ostree_mutable_tree_ensure_dir(current_tree, dir_name_z.ptr, &next_tree, &_error);
-
-                if (_error) |err| {
-                    std.log.debug("Failed to access directory {s}: {s}", .{ dir_name, err.message });
-                    break;
-                }
-
-                if (next_tree) |nt| {
-                    current_tree = nt;
-                } else {
-                    std.log.debug("Directory {s} not found", .{dir_name});
-                    break;
-                }
-            }
-
-            // If we successfully navigated to the parent directory, remove the file/directory
-            if (_error == null) {
-                const target_name = path_components.items[path_components.items.len - 1];
-                std.log.debug("Removing '{s}' from current directory", .{target_name});
-
-                const target_name_z = try std.heap.page_allocator.dupeZ(u8, target_name);
-                defer std.heap.page_allocator.free(target_name_z);
-
-                _error = null;
-                const remove_result = ostree.ostree_mutable_tree_remove(current_tree, target_name_z.ptr, 1, &_error);
-
-                if (_error) |err| {
-                    std.log.debug("Failed to remove {s}: {s}", .{ target_name, err.message });
-                } else if (remove_result != ostree.FALSE) {
-                    std.log.debug("Successfully removed {s}", .{target_name});
-                } else {
-                    std.log.debug("ostree_mutable_tree_remove returned FALSE for {s}", .{target_name});
-                }
-            }
-        }
+        return ostree.OSTREE_REPO_COMMIT_FILTER_ALLOW;
     }
 
     fn _abortTransaction(repo: *ostree.OstreeRepo, _err: ?*ostree.struct__GError) !void {
@@ -581,18 +337,10 @@ pub const LibOstree = struct {
         }
 
         _ = ostree.ostree_repo_abort_transaction(repo, null, null);
-        try _changesPathCleanup();
     }
 
     pub fn commit(self: *LibOstree) !bool {
         try _prepareUsrEtcDiff();
-        var deletions = try _prepareChangesPath();
-        defer {
-            for (deletions.items) |path| {
-                std.heap.page_allocator.free(path);
-            }
-            deletions.deinit();
-        }
 
         // commit the dev diff
         if (self.deployment) |deployment| {
@@ -657,15 +405,14 @@ pub const LibOstree = struct {
                     return false;
                 }
 
+                // replace the /usr from the base commit with the live /usr
+                // we do not read the overlay upperdir because newer ostree
+                // versions mount it from a deleted tmp dir, so it has no path
                 _error = null;
-                std.debug.print("writing dir tree...\n", .{});
-                _ret = ostree.ostree_repo_write_dfd_to_mtree(
-                    repo,
-                    fcntl.AT_FDCWD,
-                    "/tmp/mars",
+                _ret = ostree.ostree_mutable_tree_remove(
                     _mtree,
-                    null,
-                    null,
+                    "usr",
+                    ostree.FALSE,
                     &_error
                 );
 
@@ -674,10 +421,43 @@ pub const LibOstree = struct {
                     return false;
                 }
 
-                // Apply deletions from whiteout files AFTER writing the directory tree
-                if (_mtree) |mtree| {
-                    std.debug.print("applying deletions...\n", .{});
-                    try _applyDeletions(mtree, &deletions);
+                var _usrTree: ?*ostree.OstreeMutableTree = null;
+                _error = null;
+                _ret = ostree.ostree_mutable_tree_ensure_dir(
+                    _mtree,
+                    "usr",
+                    &_usrTree,
+                    &_error
+                );
+
+                if (_ret == ostree.FALSE) {
+                    try _abortTransaction(repo, _error);
+                    return false;
+                }
+
+                const _modifier = ostree.ostree_repo_commit_modifier_new(
+                    ostree.OSTREE_REPO_COMMIT_MODIFIER_FLAGS_NONE,
+                    _commitFilter,
+                    null,
+                    null
+                );
+                defer ostree.ostree_repo_commit_modifier_unref(_modifier);
+
+                _error = null;
+                std.debug.print("writing dir tree...\n", .{});
+                _ret = ostree.ostree_repo_write_dfd_to_mtree(
+                    repo,
+                    fcntl.AT_FDCWD,
+                    "/usr",
+                    _usrTree,
+                    _modifier,
+                    null,
+                    &_error
+                );
+
+                if (_ret == ostree.FALSE) {
+                    try _abortTransaction(repo, _error);
+                    return false;
                 }
 
                 _error = null;
@@ -736,7 +516,6 @@ pub const LibOstree = struct {
                     return false;
                 }
 
-                try _changesPathCleanup();
                 return true;
             }
 
